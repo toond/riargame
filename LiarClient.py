@@ -4,6 +4,7 @@ from threading import Thread
 import threading
 from tkinter.scrolledtext import ScrolledText
 from queue import Queue
+from tkinter import messagebox
 
 class LiarGameClient:
     def __init__(self, server_host='127.0.0.1', server_port=2505):
@@ -33,7 +34,6 @@ class LiarGameClient:
         Button(self.root, text="방 만들기", command=self.create_room_ui, width=15, height=2).pack(pady=20)
         Button(self.root, text="방 참여하기", command=self.join_room_ui, width=15, height=2).pack(pady=20)
 
-        # UI 업데이트를 위한 메인 루프에서 큐를 체크
         self.root.after(100, self.process_message_queue)
         self.root.mainloop()
 
@@ -41,7 +41,7 @@ class LiarGameClient:
         while not self.message_queue.empty():
             message = self.message_queue.get_nowait()
             self.update_user_activity_safe(message)
-        self.root.after(1000, self.process_message_queue)
+        self.root.after(500, self.process_message_queue)
 
     def create_room_ui(self):
         self.clear_window()
@@ -186,20 +186,37 @@ class LiarGameClient:
         while True:
             try:
                 message = self.client_socket.recv(1024).decode('utf-8')
+                if "방 ID" in message:
+                    # 메시지에서 방 ID 추출
+                    room_id_start = message.find("방 ID: ") + len("방 ID: ")
+                    room_id = message[room_id_start:].strip()
+                    self.show_restart_dialog(room_id)
+
+                if message.startswith("게임을 재시작합니다."):
+                    self.user_activity_area.config(state="normal")
+                    self.user_activity_area.delete(1.0, "end")  # 처음부터 끝까지 삭제
+                    self.user_activity_area.config(state="disabled")
+
                 if message.startswith("EXIT_TO_MAIN"):
-                    # 현재 화면의 모든 위젯 삭제
                     for widget in self.root.winfo_children():
                         widget.destroy()
-                    self.init_main_screen()  # 메인 화면 초기화 메서드 호출
+                    self.init_main_screen()
                 if message:
                     self.message_queue.put(message)
             except Exception as e:
                 self.message_queue.put(f"수신 오류: {e}")
                 break
 
+    def show_restart_dialog(self, room_id):
+        response = messagebox.askquestion("게임 종료", "게임을 재시작하시겠습니까?", icon='question')
+
+        if response == 'yes':
+            self.send_message(f"RESTART_GAME {room_id}")
+        else:
+            self.send_message(f"END_GAME {room_id}")
+
     def update_user_activity_safe(self, message):
         try:
-            # 위젯이 아직 존재하는지 확인
             if self.user_activity_area.winfo_exists():
                 self.user_activity_area.configure(state="normal")
                 self.user_activity_area.insert('end', message + '\n')
